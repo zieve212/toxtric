@@ -75,6 +75,23 @@ def test_get_properties_parses_and_converts(monkeypatch):
     assert isinstance(props["molecular_weight"], float)
 
 
+def test_get_common_name_parses_title(monkeypatch):
+    """The record Title should be returned as the common name."""
+    payload = {
+        "InformationList": {
+            "Information": [
+                {"CID": 2519, "Title": "Caffeine"},
+                {"CID": 2519, "Description": "A methylxanthine alkaloid..."},
+            ]
+        }
+    }
+    monkeypatch.setattr(
+        pubchem_client.requests, "get", lambda *a, **k: FakeResponse(200, payload)
+    )
+
+    assert pubchem_client.get_common_name(2519) == "Caffeine"
+
+
 def test_get_bioassays_flattens_table(monkeypatch):
     """Assay rows should be flattened into per-assay dicts."""
     payload = {

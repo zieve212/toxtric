@@ -88,6 +88,28 @@ def get_properties(cid: int) -> dict:
     }
 
 
+def get_common_name(cid: int) -> str | None:
+    """
+    Fetch the everyday English name for a CID (e.g. "Caffeine").
+
+    PubChem stores this as the record "Title" on its description endpoint,
+    which is separate from the formal IUPAC name. Returns None if no title
+    is available.
+    """
+    url = f"{BASE_URL}/compound/cid/{cid}/description/JSON"
+    response = _request(url)
+
+    if response.status_code == 404:
+        return None
+    response.raise_for_status()
+
+    info = response.json().get("InformationList", {}).get("Information", [])
+    for entry in info:
+        if "Title" in entry:
+            return entry["Title"]
+    return None
+
+
 def get_bioassays(cid: int) -> list[dict]:
     """
     Fetch all BioAssay summary rows for a CID.
@@ -129,10 +151,12 @@ def fetch_compound(smiles: str) -> dict:
     """
     cid = get_cid(smiles)
     properties = get_properties(cid)
+    common_name = get_common_name(cid)
     bioassays = get_bioassays(cid)
 
     return {
         "cid": cid,
+        "common_name": common_name,
         "iupac_name": properties["iupac_name"],
         "molecular_formula": properties["molecular_formula"],
         "molecular_weight": properties["molecular_weight"],
@@ -146,6 +170,7 @@ if __name__ == "__main__":
     caffeine = "CN1C=NC2=C1C(=O)N(C(=O)N2C)C"
     record = fetch_compound(caffeine)
     print(f"CID:               {record['cid']}")
+    print(f"Common name:       {record['common_name']}")
     print(f"IUPAC name:        {record['iupac_name']}")
     print(f"Molecular formula: {record['molecular_formula']}")
     print(f"Molecular weight:  {record['molecular_weight']}")
