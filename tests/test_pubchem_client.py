@@ -100,14 +100,19 @@ def test_get_bioassays_flattens_table(monkeypatch):
                 "Column": [
                     "AID",
                     "Activity Outcome",
-                    "Target GI",
-                    "Target Name",
                     "Target Accession",
+                    "Target GeneID",
+                    "Activity Value [uM]",
+                    "Activity Name",
+                    "Assay Type",
+                    "Assay Name",
                 ]
             },
             "Row": [
-                {"Cell": ["1234", "Active", "5678", "Adenosine receptor", "P29274"]},
-                {"Cell": ["1235", "Inactive", "9999", "Other target", "Q00000"]},
+                {"Cell": ["1234", "Active", "P29274", "135", "12.5", "IC50",
+                          "Confirmatory", "A2A binding assay"]},
+                {"Cell": ["1235", "Inactive", "", "", "", "", "Other",
+                          "Yeast phenotypic screen"]},
             ],
         }
     }
@@ -120,6 +125,11 @@ def test_get_bioassays_flattens_table(monkeypatch):
     assert assays[0]["aid"] == "1234"
     assert assays[0]["activity_outcome"] == "Active"
     assert assays[0]["target_accession"] == "P29274"
+    assert assays[0]["activity_value_um"] == 12.5
+    assert assays[0]["activity_name"] == "IC50"
+    assert assays[0]["assay_type"] == "Confirmatory"
+    # Blank cells become None so the parser can skip untargeted assays.
+    assert assays[1]["target_accession"] is None
 
 
 def test_get_bioassays_no_data_returns_empty(monkeypatch):

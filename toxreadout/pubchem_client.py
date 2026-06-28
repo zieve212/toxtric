@@ -132,13 +132,25 @@ def get_bioassays(cid: int) -> list[dict]:
     for row in rows:
         # Pair each column name with its cell value for easy lookup.
         record = dict(zip(columns, row.get("Cell", [])))
+
+        # Potency comes through as a string (or blank); make it a number.
+        raw_value = record.get("Activity Value [uM]")
+        try:
+            value_um = float(raw_value) if raw_value not in (None, "") else None
+        except ValueError:
+            value_um = None
+
         results.append(
             {
                 "aid": record.get("AID"),
                 "activity_outcome": record.get("Activity Outcome"),
-                "target_gi": record.get("Target GI"),
-                "target_name": record.get("Target Name"),
-                "target_accession": record.get("Target Accession"),
+                # Blank strings become None so downstream code can skip them.
+                "target_accession": record.get("Target Accession") or None,
+                "target_geneid": record.get("Target GeneID") or None,
+                "activity_value_um": value_um,
+                "activity_name": record.get("Activity Name") or None,
+                "assay_type": record.get("Assay Type") or None,
+                "assay_name": record.get("Assay Name") or None,
             }
         )
     return results
