@@ -20,9 +20,10 @@ from rich.table import Table
 
 # Work whether imported as a package, run with -m, or run directly.
 try:
-    from toxreadout import pipeline
+    from toxreadout import pipeline, resolvers
 except ModuleNotFoundError:
     import pipeline
+    import resolvers
 
 # Results go to stdout; progress/status go to stderr.
 console = Console()
@@ -122,12 +123,52 @@ def _load_fasta_inputs(fasta_args: tuple) -> list:
     return inputs
 
 
+def _resolve_compound_name(name: str) -> str:
+    """Resolve a compound name to a SMILES, showing the user what was picked."""
+    with err_console.status(f"[bold cyan]Resolving compound '{name}'..."):
+        try:
+            compound = resolvers.resolve_compound(name)
+        except Exception as exc:
+            err_console.print(f"[bold red]Error resolving compound:[/] {exc}")
+            raise SystemExit(1)
+    err_console.print(
+        f"[green]Compound:[/] {compound['common_name']} "
+        f"(CID {compound['cid']}, {compound['molecular_formula']})"
+    )
+    err_console.print(f"  [cyan]SMILES:[/] {compound['smiles']}")
+    return compound["smiles"]
+
+
+def _resolve_protein_name(name: str) -> str:
+    """Resolve a protein name to a FASTA, showing the user what was picked."""
+    with err_console.status(f"[bold cyan]Resolving protein '{name}'..."):
+        try:
+            protein = resolvers.resolve_protein(name)
+        except Exception as exc:
+            err_console.print(f"[bold red]Error resolving protein:[/] {exc}")
+            raise SystemExit(1)
+    err_console.print(
+        f"[green]Protein:[/] {protein['protein_name']} "
+        f"({protein['accession']}, {protein['organism']})"
+    )
+    err_console.print(
+        f"  [cyan]FASTA:[/] >sp|{protein['accession']}|{protein['entry_name']} "
+        f"({len(protein['sequence'])} aa) - use -f with this accession to re-run precisely"
+    )
+    return protein["fasta"]
+
+
 @click.command()
-@click.option("--smiles", "-s", required=True,
+@click.option("--smiles", "-s", default=None,
               help="Compound SMILES string.")
-@click.option("--fasta", "-f", "fasta", required=True, multiple=True,
+@click.option("--compound-name", "compound_name", default=None,
+              help="Compound English name (resolved to SMILES via PubChem).")
+@click.option("--fasta", "-f", "fasta", multiple=True,
               help="Protein FASTA file path or raw sequence/accession. "
                    "Repeat -f for multiple targets.")
+@click.option("--protein-name", "protein_names", multiple=True,
+              help="Protein English name (resolved to FASTA via UniProt). "
+                   "Repeat for multiple targets.")
 @click.option("--output", "-o", type=click.Path(), default=None,
               help="Write the readout to this file instead of the screen.")
 @click.option("--format", "output_format",
@@ -135,9 +176,31 @@ def _load_fasta_inputs(fasta_args: tuple) -> list:
               help="Output format. Defaults to pretty on screen, json to file.")
 @click.option("--no-literature", is_flag=True, default=False,
               help="Skip the PubMed literature search (faster).")
-def main(smiles, fasta, output, output_format, no_literature):
-    """Generate a toxicology readout for a compound against protein target(s)."""
+def main(smiles, compound_name, fasta, protein_names, output, output_format, no_literature):
+    """Generate a toxicology readout for a compound against protein target(s).
+
+    Provide the compound as a SMILES (-s) or an English name
+    (--compound-name), and the protein(s) as FASTA (-f) or English name(s)
+    (--protein-name). Name lookups print the resolved SMILES/FASTA so you
+    can copy and tweak them.
+    """
+    # --- Resolve the compound (name takes the resolver path) ---
+    if smiles and compound_name:
+        err_console.print("[bold red]Error:[/] use either -s or --compound-name, not both.")
+        raise SystemExit(2)
+    if compound_name:
+        smiles = _resolve_compound_name(compound_name)
+    if not smiles:
+        err_console.print("[bold red]Error:[/] provide a compound via -s or --compound-name.")
+        raise SystemExit(2)
+
+    # --- Resolve the protein target(s) from files, raw input, and names ---
     fasta_inputs = _load_fasta_inputs(fasta)
+    for name in protein_names:
+        fasta_inputs.append(_resolve_protein_name(name))
+    if not fasta_inputs:
+        err_console.print("[bold red]Error:[/] provide a protein via -f or --protein-name.")
+        raise SystemExit(2)
 
     # Pretty for the screen, json for files, unless the user overrides.
     if output_format is None:

@@ -108,6 +108,43 @@ def test_fasta_file_is_read(monkeypatch, tmp_path):
     assert captured["fasta_inputs"][0].startswith(">sp|P29274|")
 
 
+def test_compound_and_protein_name_mode(monkeypatch):
+    """English-name input should resolve, display codes, and run."""
+    captured = {}
+
+    def fake_run(smiles, fasta_inputs, **kwargs):
+        captured["smiles"] = smiles
+        captured["fasta_inputs"] = fasta_inputs
+        return readout.Readout(SAMPLE_DATA)
+
+    monkeypatch.setattr(cli.pipeline, "run_pipeline", fake_run)
+    monkeypatch.setattr(cli.resolvers, "resolve_compound", lambda name: {
+        "common_name": "Caffeine", "cid": 2519, "molecular_formula": "C8H10N4O2",
+        "smiles": "CN1C=NC2=C1C(=O)N(C(=O)N2C)C",
+    })
+    monkeypatch.setattr(cli.resolvers, "resolve_protein", lambda name: {
+        "protein_name": "Adenosine receptor A2a", "accession": "P29274",
+        "organism": "Homo sapiens", "entry_name": "AA2AR_HUMAN",
+        "sequence": "MPIM" * 10, "fasta": ">sp|P29274|AA2AR_HUMAN\nMPIMMPIM",
+    })
+
+    result = CliRunner().invoke(
+        cli.main,
+        ["--compound-name", "caffeine", "--protein-name", "adenosine A2A receptor"],
+    )
+    assert result.exit_code == 0
+    # The resolved SMILES/FASTA were passed through to the pipeline.
+    assert captured["smiles"] == "CN1C=NC2=C1C(=O)N(C(=O)N2C)C"
+    assert captured["fasta_inputs"][0].startswith(">sp|P29274|")
+
+
+def test_smiles_and_compound_name_conflict():
+    result = CliRunner().invoke(
+        cli.main, ["-s", "CN1...", "--compound-name", "caffeine", "-f", "P29274"]
+    )
+    assert result.exit_code == 2  # can't use both
+
+
 def test_pipeline_error_exits_nonzero(monkeypatch):
     def boom(*_a, **_k):
         raise cli.pipeline.PipelineError("bad SMILES")
