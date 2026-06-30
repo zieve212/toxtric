@@ -14,6 +14,57 @@ import json
 from datetime import datetime, timezone
 
 
+# Plain-English interpretation of each concern level. These describe what
+# the experimental evidence implies — not any specific molecular mechanism.
+_CONCERN_INTERPRETATION = {
+    "LOW": "a limited or weak interaction; unlikely to be a primary target "
+           "at typical exposures.",
+    "MODERATE": "a measurable interaction that may be biologically relevant "
+                "and warrants further review.",
+    "HIGH": "a strong interaction that is likely biologically significant.",
+    "CRITICAL": "a very strong interaction and a high priority for "
+                "toxicological concern.",
+    "UNKNOWN": "no experimental evidence, so the interaction cannot be "
+               "characterized from database data.",
+}
+
+
+def explain_interaction(compound_name: str, target: dict) -> str:
+    """
+    Build a plain-English explanation of how the compound interacts with one
+    protein, derived entirely from the assay evidence and risk score.
+    """
+    protein = target["protein"]
+    interaction = target["interaction"]
+    risk = target["risk_assessment"]
+    protein_name = protein.get("name") or protein.get("accession")
+    concern = risk.get("concern_level", "UNKNOWN")
+    interpretation = _CONCERN_INTERPRETATION.get(concern, "")
+
+    if not interaction.get("match_found"):
+        return (
+            f"{compound_name} has no experimental BioAssay records against "
+            f"{protein_name}, so no interaction could be measured. This means "
+            f"the databases hold no evidence either way — not that the compound "
+            f"is necessarily safe or inactive."
+        )
+
+    potency = interaction.get("potency_range_um")
+    potency_text = (
+        f"with potency as strong as {potency['min']} uM"
+        if potency
+        else "though no potency value was reported"
+    )
+    percent = round(interaction.get("active_ratio", 0) * 100)
+    return (
+        f"{compound_name} was tested against {protein_name} in "
+        f"{interaction['total_assays']} assays, of which "
+        f"{interaction['active_assays']} showed activity ({percent}%), "
+        f"{potency_text}. On the transparent 0-1 risk scale this scores "
+        f"{risk['score']} ({concern}) — {interpretation}"
+    )
+
+
 def build_target_entry(protein: dict, interaction: dict, risk: dict) -> dict:
     """
     Combine one protein's metadata, its matched interaction, and its risk
@@ -111,6 +162,14 @@ class Readout:
 
         lines.append("-" * 64)
 
+        # Plain-English interaction explanation per target.
+        compound_name = c.get("common_name") or "The compound"
+        lines.append("")
+        lines.append("INTERACTION EXPLANATION")
+        for target in d["targets"]:
+            lines.append(f"  {target['protein'].get('accession')}:")
+            lines.append(f"    {explain_interaction(compound_name, target)}")
+
         lit = d.get("literature")
         if lit:
             lines.append("")
@@ -119,6 +178,27 @@ class Readout:
                 f"  PubMed hits: {lit.get('pubmed_hits')} "
                 f'for "{lit.get("query")}"'
             )
+
+            discussion = lit.get("discussion")
+            if discussion:
+                lines.append("")
+                lines.append("  Summary (from the most relevant paper):")
+                lines.append(f"    {discussion}")
+                source = lit.get("discussion_source")
+                if source:
+                    lines.append(f"    Source: {source.get('title')}")
+                    lines.append(f"            {source.get('url')}")
+
+            references = lit.get("top_references") or []
+            if references:
+                lines.append("")
+                lines.append("  Citations:")
+                for i, ref in enumerate(references, 1):
+                    lines.append(
+                        f"    [{i}] {ref.get('title')} "
+                        f"({ref.get('journal')}, {ref.get('year')})"
+                    )
+                    lines.append(f"        {ref.get('url')}")
 
         lines.append("=" * 64)
         return "\n".join(lines)
@@ -160,6 +240,8 @@ def assemble_readout(
         data["literature"] = {
             "query": literature.get("query"),
             "pubmed_hits": literature.get("total_results"),
+            "discussion": literature.get("discussion"),
+            "discussion_source": literature.get("discussion_source"),
             "top_references": literature.get("top_references", []),
         }
 

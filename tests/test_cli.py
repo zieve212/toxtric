@@ -37,8 +37,17 @@ SAMPLE_DATA = {
                                 "data_source": "database_lookup"},
         }
     ],
-    "literature": {"query": "Caffeine AND Adenosine receptor A2a",
-                   "pubmed_hits": 31, "top_references": []},
+    "literature": {
+        "query": "Caffeine AND Adenosine receptor A2a",
+        "pubmed_hits": 31,
+        "discussion": "Caffeine is an antagonist at the adenosine A2A receptor.",
+        "discussion_source": {"pmid": "1", "title": "A key paper",
+                              "url": "https://pubmed.ncbi.nlm.nih.gov/1/"},
+        "top_references": [
+            {"pmid": "1", "title": "A key paper", "journal": "J Caffeine",
+             "year": "2021", "url": "https://pubmed.ncbi.nlm.nih.gov/1/"},
+        ],
+    },
 }
 
 
@@ -76,6 +85,10 @@ def test_pretty_output_to_stdout(mock_pipeline):
     assert "Compound" in result.output
     assert "P29274" in result.output
     assert "MODERATE" in result.output
+    # New sections: interaction explanation, abstract summary, citations.
+    assert "How they interact" in result.output
+    assert "antagonist at the adenosine A2A receptor" in result.output
+    assert "pubmed.ncbi.nlm.nih.gov/1" in result.output
 
 
 def test_output_to_file(mock_pipeline, tmp_path):

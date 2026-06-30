@@ -46,7 +46,13 @@ RISK = {
 LITERATURE = {
     "query": "caffeine AND adenosine receptor A2a",
     "total_results": 31,
-    "top_references": [{"pmid": "1", "title": "A paper", "url": "http://x/1/"}],
+    "discussion": "Caffeine acts as an antagonist at the adenosine A2A receptor.",
+    "discussion_source": {"pmid": "1", "title": "A key paper",
+                          "url": "https://pubmed.ncbi.nlm.nih.gov/1/"},
+    "top_references": [
+        {"pmid": "1", "title": "A key paper", "journal": "J Caffeine",
+         "year": "2021", "url": "https://pubmed.ncbi.nlm.nih.gov/1/"},
+    ],
 }
 
 
@@ -93,6 +99,27 @@ def test_to_pretty_string_contains_key_facts():
     assert "P29274" in text
     assert "MODERATE" in text
     assert "PubMed hits: 31" in text
+    # New: interaction explanation, abstract summary, and a citation link.
+    assert "INTERACTION EXPLANATION" in text
+    assert "antagonist at the adenosine A2A receptor" in text
+    assert "https://pubmed.ncbi.nlm.nih.gov/1/" in text
+
+
+def test_explain_interaction_match_and_no_match():
+    matched_target = ro.build_target_entry(PROTEIN, INTERACTION, RISK)
+    text = ro.explain_interaction("Caffeine", matched_target)
+    assert "Caffeine was tested against Adenosine receptor A2a" in text
+    assert "MODERATE" in text
+
+    no_match_target = ro.build_target_entry(
+        {"accession": "P01308", "protein_name": "Insulin"},
+        {"match_found": False, "total_assays": 0, "active_assays": 0,
+         "active_ratio": 0.0, "potency_range_um": None, "assay_types": []},
+        {"score": 0.0, "concern_level": "UNKNOWN", "reasoning": "",
+         "confidence": "none", "data_source": "none"},
+    )
+    text = ro.explain_interaction("Caffeine", no_match_target)
+    assert "no experimental BioAssay records" in text
 
 
 def test_multiple_targets_and_no_match():

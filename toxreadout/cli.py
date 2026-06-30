@@ -20,10 +20,11 @@ from rich.table import Table
 
 # Work whether imported as a package, run with -m, or run directly.
 try:
-    from toxreadout import pipeline, resolvers
+    from toxreadout import pipeline, resolvers, readout
 except ModuleNotFoundError:
     import pipeline
     import resolvers
+    import readout
 
 # Results go to stdout; progress/status go to stderr.
 console = Console()
@@ -95,20 +96,45 @@ def render_rich(data: dict) -> None:
 
     console.print(table)
 
-    # Reasoning for each matched target.
+    # Plain-English explanation of how the compound interacts with each target.
+    compound_name = data["compound"].get("common_name") or "The compound"
+    console.print()
+    console.rule("[bold]How they interact[/]")
     for target in data["targets"]:
-        if target["interaction"].get("match_found"):
-            risk = target["risk_assessment"]
-            console.print(
-                f"  [dim]{target['protein'].get('accession')}:[/] {risk.get('reasoning')}"
-            )
+        console.print(
+            f"[bold cyan]{target['protein'].get('accession')}[/]  "
+            + readout.explain_interaction(compound_name, target)
+        )
 
     lit = data.get("literature")
     if lit:
+        console.print()
+        console.rule("[bold]Literature[/]")
         console.print(
-            f'\n[dim]Literature:[/] {lit.get("pubmed_hits")} PubMed hits '
-            f'for "{lit.get("query")}"'
+            f'[dim]{lit.get("pubmed_hits")} PubMed hits for[/] "{lit.get("query")}"'
         )
+
+        discussion = lit.get("discussion")
+        if discussion:
+            console.print()
+            console.print("[bold]Summary from the most relevant paper:[/]")
+            console.print(discussion)
+            source = lit.get("discussion_source")
+            if source and source.get("url"):
+                console.print(
+                    f"[dim]Source:[/] [link={source['url']}]{source.get('title')}[/link]"
+                )
+
+        references = lit.get("top_references") or []
+        if references:
+            console.print()
+            console.print("[bold]Citations:[/]")
+            for i, ref in enumerate(references, 1):
+                url = ref.get("url")
+                meta = f"({ref.get('journal')}, {ref.get('year')})"
+                console.print(f"  [cyan]{i}.[/] {ref.get('title')} [dim]{meta}[/]")
+                if url:
+                    console.print(f"     [link={url}]{url}[/link]")
 
 
 def _load_fasta_inputs(fasta_args: tuple) -> list:
@@ -184,6 +210,12 @@ def main(smiles, compound_name, fasta, protein_names, output, output_format, no_
     (--protein-name). Name lookups print the resolved SMILES/FASTA so you
     can copy and tweak them.
     """
+    # Scientific abstracts contain Unicode; keep the Windows console happy.
+    import sys
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
     # --- Resolve the compound (name takes the resolver path) ---
     if smiles and compound_name:
         err_console.print("[bold red]Error:[/] use either -s or --compound-name, not both.")
