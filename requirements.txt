@@ -1,0 +1,6 @@
+rdkit
+biopython
+requests
+click
+rich
+pytest
