@@ -125,9 +125,23 @@ def test_literature_lookup_assembles_result(monkeypatch):
     monkeypatch.setattr(literature_client.requests, "get", fake_get)
 
     result = literature_client.literature_lookup("caffeine", "adenosine receptor A2A")
-    assert result["query"] == "caffeine AND adenosine receptor A2A"
+    # The query is now focused with mechanism terms.
+    assert result["query"].startswith("caffeine AND adenosine receptor A2A")
+    assert "binding" in result["query"]
     assert result["total_results"] == 47
-    # The discussion should come from the first article that has an abstract.
+    # The discussion should come from the on-target article with an abstract.
     assert "Caffeine blocks adenosine receptors." in result["discussion"]
     assert result["discussion_source"]["pmid"] == "11111111"
     assert len(result["top_references"]) == 2
+
+
+def test_select_discussion_prefers_on_target():
+    """Given several abstracts, the most protein-relevant one should win."""
+    articles = [
+        {"pmid": "1", "title": "Caffeine and exercise performance",
+         "abstract": "A broad review of caffeine and sports.", "url": "u1"},
+        {"pmid": "2", "title": "Adenosine A2A receptor antagonist binding by caffeine",
+         "abstract": "Caffeine binds the adenosine A2A receptor.", "url": "u2"},
+    ]
+    best = literature_client._select_discussion(articles, "adenosine A2A receptor")
+    assert best["pmid"] == "2"

@@ -9,6 +9,7 @@ abstracts. The top paper's abstract serves as a plain-English discussion
 of the interaction; every top paper gets a clickable PubMed link.
 """
 
+import re
 import sys
 import time
 import xml.etree.ElementTree as ET
@@ -133,30 +134,79 @@ def fetch_articles(pmids: list[str]) -> list[dict]:
     return articles
 
 
+# Terms that signal a paper is actually about a compound-protein interaction
+# (rather than a broad review). Used both to focus the query and to rank
+# which paper's abstract becomes the discussion.
+MECHANISM_TERMS = ["binding", "antagonist", "agonist", "inhibitor", "interaction"]
+
+# Generic words to ignore when turning a protein name into match keywords.
+_STOPWORDS = {"the", "and", "of", "a", "an", "for", "to"}
+
+
+def _keywords(protein: str) -> list:
+    """Reduce a protein name to meaningful lowercase match keywords."""
+    tokens = re.findall(r"[a-z0-9]+", (protein or "").lower())
+    return [t for t in tokens if len(t) >= 2 and t not in _STOPWORDS]
+
+
+def _score_article(article: dict, keywords: list) -> int:
+    """
+    Rank how on-target an article is for the interaction: protein keywords
+    in the title count most, then in the abstract, plus a bump for
+    mechanism terms in the title.
+    """
+    title = (article.get("title") or "").lower()
+    abstract = (article.get("abstract") or "").lower()
+    score = 0
+    for keyword in keywords:
+        if keyword in title:
+            score += 2
+        if keyword in abstract:
+            score += 1
+    for term in MECHANISM_TERMS:
+        if term in title:
+            score += 1
+    return score
+
+
+def _select_discussion(articles: list, protein: str) -> dict | None:
+    """Pick the most on-target article that actually has an abstract."""
+    keywords = _keywords(protein)
+    best = None
+    best_score = -1
+    for article in articles:
+        if not article.get("abstract"):
+            continue
+        score = _score_article(article, keywords)
+        if score > best_score:
+            best_score = score
+            best = article
+    return best
+
+
 def literature_lookup(compound: str, protein: str, top_n: int = 5) -> dict:
     """
     Search PubMed for papers on a compound-protein interaction and return
     a discussion (the most relevant paper's abstract) plus linked
     references.
     """
-    query = f"{compound} AND {protein}"
+    # Focus the search on interaction/mechanism papers so the top hits are
+    # about the pairing itself, not broad reviews that merely mention both.
+    query = f"{compound} AND {protein} AND ({' OR '.join(MECHANISM_TERMS)})"
     search = search_pubmed(query)
 
-    # Fetch details for the top handful of hits.
-    articles = fetch_articles(search["pmids"][: max(top_n, 1) + 3])
+    # Fetch a few extra so the on-target ranking has candidates to choose from.
+    articles = fetch_articles(search["pmids"][: max(top_n, 1) + 5])
 
-    # Use the first paper that actually has an abstract as the discussion.
-    discussion = ""
-    discussion_source = None
-    for article in articles:
-        if article["abstract"]:
-            discussion = article["abstract"]
-            discussion_source = {
-                "pmid": article["pmid"],
-                "title": article["title"],
-                "url": article["url"],
-            }
-            break
+    # Use the most on-target paper (by protein/mechanism keywords) as the
+    # discussion, rather than just the first one with an abstract.
+    best = _select_discussion(articles, protein)
+    discussion = best["abstract"] if best else ""
+    discussion_source = (
+        {"pmid": best["pmid"], "title": best["title"], "url": best["url"]}
+        if best
+        else None
+    )
 
     references = [
         {
